@@ -2,6 +2,9 @@ from __future__ import annotations
 import httpx
 from difflib import SequenceMatcher
 from datetime import datetime, timezone
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 from typing import Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from signals.base import SignalProvider, SignalResult
@@ -228,7 +231,7 @@ class CombinedSignal:
                     if l.outcome_label == "LOSS"
                     and l.confidence_at_entry > 0.30
                     and l.created_at is not None
-                    and (datetime.now(timezone.utc) - l.created_at).days < 30
+                    and (_utcnow() - l.created_at).days < 30
                 ]
                 if len(recent_losses) >= 3:
                     confidence = min(confidence, 0.30)
