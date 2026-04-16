@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     weekly_min_hours: float = 48.0          # weekly sessions: at least 2 days out
     weekly_max_hours: float = 168.0         # weekly sessions: max 7 days out
     longterm_min_hours: float = 168.0       # long-term: minimum 7 days out
-    longterm_max_hours: float = 8760.0      # long-term: max 1 year
+    longterm_max_hours: float = 168.0       # SHORT MARKET MODE: cap at 7 days (weekly only)
 
     # Per-session capital
     session_capital_usd: float = 100.0       # per weekly session × 3

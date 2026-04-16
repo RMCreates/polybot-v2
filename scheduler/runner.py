@@ -192,7 +192,7 @@ def start_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_full_cycle,
         "interval",
-        minutes=15,
+        minutes=5,
         id="full_cycle",
         max_instances=1,
     )

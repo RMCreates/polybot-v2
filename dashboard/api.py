@@ -281,7 +281,7 @@ async def check_source_health() -> dict:
     metaculus_url = "https://www.metaculus.com/api/questions/?limit=1"
 
     checks = [
-        ("kalshi", "https://trading-api.kalshi.com/trade-api/v2/markets?limit=1&status=open", {}),
+        ("kalshi", "https://api.elections.kalshi.com/trade-api/v2/markets?limit=1&status=open", {}),
         ("manifold", "https://api.manifold.markets/v0/markets?limit=1", {}),
     ]
     news_key = settings.news_api_key.get_secret_value()
