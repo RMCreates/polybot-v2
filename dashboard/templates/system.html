@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}System{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white mb-1">System Status</h1>
+    <p class="text-gray-400 text-sm">Live pipeline view. Auto-refreshes every 30s.</p>
+  </div>
+  <!-- Pause / Resume button -->
+  <div>
+    {% if bot_paused %}
+    <button onclick="resumeBot()" class="px-4 py-2 bg-red-900/60 hover:bg-red-800 text-red-300 border border-red-700 rounded-lg text-sm font-bold transition-colors">
+      ⏸ PAUSED — Click to Resume
+    </button>
+    {% else %}
+    <button onclick="pauseBot()" class="px-4 py-2 bg-green-900/40 hover:bg-green-900/70 text-green-400 border border-green-800 rounded-lg text-sm font-bold transition-colors">
+      ▶ RUNNING — Click to Pause
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Last cycle info -->
+{% if last_cycle %}
+<div class="bg-gray-900 rounded-lg border border-gray-800 px-5 py-3 mb-6 flex flex-wrap gap-6 text-xs">
+  <div>
+    <span class="text-gray-500 uppercase">Last Cycle</span>
+    <span class="ml-2 text-white font-mono" id="cycle-time">{{ last_cycle.get('completed_at', '—') }}</span>
+  </div>
+  <div>
+    <span class="text-gray-500 uppercase">Duration</span>
+    <span class="ml-2 text-white font-mono">{{ last_cycle.get('duration_sec', '—') }}s</span>
+  </div>
+  <div>
+    <span class="text-gray-500 uppercase">Markets</span>
+    <span class="ml-2 text-blue-300 font-mono">{{ last_cycle.get('markets', '—') }}</span>
+  </div>
+  <div>
+    <span class="text-gray-500 uppercase">Signals</span>
+    <span class="ml-2 text-purple-300 font-mono">{{ last_cycle.get('signals', '—') }}</span>
+  </div>
+  <div>
+    <span class="text-gray-500 uppercase">Trades</span>
+    <span class="ml-2 text-yellow-300 font-mono">{{ last_cycle.get('trades', '—') }}</span>
+  </div>
+  <div>
+    <span class="text-gray-500 uppercase">Resolved</span>
+    <span class="ml-2 text-green-300 font-mono">{{ last_cycle.get('resolved', '—') }}</span>
+  </div>
+  <div class="ml-auto">
+    {% if last_cycle.get('status') == 'ok' %}
+    <span class="text-green-400">● OK</span>
+    {% else %}
+    <span class="text-red-400">● ERROR: {{ last_cycle.get('error', '')[:60] }}</span>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="bg-gray-900 rounded-lg border border-gray-800 px-5 py-3 mb-6 text-xs text-gray-600">
+  No cycle data yet — first cycle runs on startup (takes ~30s).
+</div>
+{% endif %}
+
+<!-- Pipeline flow -->
+<div class="flex items-center gap-2 mb-6 overflow-x-auto pb-3">
+  <div class="flex-shrink-0 bg-gray-900 border border-blue-800 rounded-lg p-4 w-40">
+    <div class="text-blue-400 font-bold text-xs mb-2">① DATA</div>
+    <div class="text-gray-400 text-xs leading-relaxed">Polymarket Gamma + CLOB APIs</div>
+  </div>
+  <div class="text-gray-600 text-xl flex-shrink-0">→</div>
+  <div class="flex-shrink-0 bg-gray-900 border border-purple-800 rounded-lg p-4 w-40">
+    <div class="text-purple-400 font-bold text-xs mb-2">② SIGNAL</div>
+    <div class="text-gray-400 text-xs leading-relaxed">Kalshi · Manifold · Momentum · Order Book</div>
+  </div>
+  <div class="text-gray-600 text-xl flex-shrink-0">→</div>
+  <div class="flex-shrink-0 bg-gray-900 border border-yellow-800 rounded-lg p-4 w-40">
+    <div class="text-yellow-400 font-bold text-xs mb-2">③ EDGE</div>
+    <div class="text-gray-400 text-xs leading-relaxed">fair prob − market mid</div>
+  </div>
+  <div class="text-gray-600 text-xl flex-shrink-0">→</div>
+  <div class="flex-shrink-0 bg-gray-900 border border-orange-800 rounded-lg p-4 w-40">
+    <div class="text-orange-400 font-bold text-xs mb-2">④ RISK</div>
+    <div class="text-gray-400 text-xs leading-relaxed">10 rules · Kelly sizing · tiered caps</div>
+  </div>
+  <div class="text-gray-600 text-xl flex-shrink-0">→</div>
+  <div class="flex-shrink-0 bg-gray-900 border border-green-800 rounded-lg p-4 w-40">
+    <div class="text-green-400 font-bold text-xs mb-2">⑤ PAPER TRADE</div>
+    <div class="text-gray-400 text-xs leading-relaxed">Simulated fills · Full audit trail</div>
+  </div>
+  <div class="text-gray-600 text-xl flex-shrink-0">→</div>
+  <div class="flex-shrink-0 bg-gray-900 border border-red-900 rounded-lg p-4 w-40 opacity-40">
+    <div class="text-red-400 font-bold text-xs mb-2">⑥ LIVE 🔒</div>
+    <div class="text-gray-500 text-xs leading-relaxed">Locked. 30+ resolved trades required.</div>
+  </div>
+</div>
+
+<!-- Signal source health -->
+<div class="bg-gray-900 rounded-lg border border-gray-800 p-4 mb-6">
+  <div class="text-xs text-gray-500 uppercase font-bold tracking-wider mb-3">Signal Source Health</div>
+  <div id="source-health" class="flex gap-4 flex-wrap">
+    <div class="text-xs text-gray-600">Checking sources...</div>
+  </div>
+</div>
+
+<!-- Status cards -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="bg-gray-900 rounded-lg p-4 border border-blue-900">
+    <div class="text-xs text-blue-400 uppercase mb-3 font-bold tracking-wider">Data Collector</div>
+    <div class="space-y-2 text-sm">
+      <div class="flex justify-between"><span class="text-gray-500">Markets tracked</span><span class="text-white font-bold">{{ status.markets_tracked }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">OB snapshots (24h)</span><span class="text-white font-bold">{{ status.orderbook_snapshots_today }}</span></div>
+    </div>
+  </div>
+
+  <div class="bg-gray-900 rounded-lg p-4 border border-purple-900">
+    <div class="text-xs text-purple-400 uppercase mb-3 font-bold tracking-wider">Signal Engine</div>
+    <div class="space-y-2 text-sm">
+      <div class="flex justify-between"><span class="text-gray-500">Signals (24h)</span><span class="text-white font-bold">{{ status.signals_today }}</span></div>
+      <div class="flex justify-between">
+        <span class="text-gray-500">Avg edge (24h)</span>
+        <span class="font-bold font-mono {% if status.avg_edge_today > 0 %}text-green-400{% elif status.avg_edge_today < 0 %}text-red-400{% else %}text-gray-500{% endif %}">
+          {{ "%+.1f" | format(status.avg_edge_today * 100) }}%
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-gray-900 rounded-lg p-4 border border-orange-900">
+    <div class="text-xs text-orange-400 uppercase mb-3 font-bold tracking-wider">Risk Engine</div>
+    <div class="space-y-2 text-sm">
+      <div class="flex justify-between"><span class="text-gray-500">Trades approved (24h)</span><span class="text-white font-bold">{{ status.trades_today }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Open positions</span><span class="text-yellow-400 font-bold">{{ status.open_positions }}</span></div>
+    </div>
+  </div>
+
+  <div class="bg-gray-900 rounded-lg p-4 border border-green-900">
+    <div class="text-xs text-green-400 uppercase mb-3 font-bold tracking-wider">Paper Trader</div>
+    <div class="space-y-2 text-sm">
+      <div class="flex justify-between"><span class="text-gray-500">Total exposure</span><span class="text-white font-bold">${{ status.total_exposure_usd }}</span></div>
+      <div class="flex justify-between">
+        <span class="text-gray-500">Total P&amp;L</span>
+        <span class="font-bold font-mono {% if status.total_pnl_usd >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+          ${{ "%.2f" | format(status.total_pnl_usd) }}
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Per-session capital bars -->
+<div class="bg-gray-900 rounded-lg p-5 border border-gray-800">
+  <div class="flex justify-between items-center mb-4">
+    <span class="text-gray-400 text-sm">Capital by Session</span>
+    <a href="/trades" class="text-xs text-gray-600 hover:text-gray-400 transition-colors">View all trades →</a>
+  </div>
+  <div id="session-bars" class="space-y-3">
+    <div class="text-xs text-gray-600">Loading...</div>
+  </div>
+  <div class="flex justify-between text-xs text-gray-600 mt-3 pt-2 border-t border-gray-800">
+    <span>Total capacity: $425</span>
+    <span id="total-exposure-label">calculating...</span>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function pauseBot() {
+  await fetch('/api/bot/pause', { method: 'POST' });
+  location.reload();
+}
+async function resumeBot() {
+  await fetch('/api/bot/resume', { method: 'POST' });
+  location.reload();
+}
+
+async function loadSourceHealth() {
+  const el = document.getElementById('source-health');
+  try {
+    const resp = await fetch('/api/sources/health');
+    const data = await resp.json();
+    el.innerHTML = Object.entries(data).map(([name, s]) => `
+      <div class="flex items-center gap-2 bg-gray-800 rounded px-3 py-2">
+        <span class="w-2 h-2 rounded-full ${s.ok ? 'bg-green-400' : 'bg-red-500'}"></span>
+        <span class="text-gray-300 text-xs font-bold uppercase">${name}</span>
+        <span class="text-gray-500 text-xs">${s.ms != null ? s.ms + 'ms' : s.note || 'unreachable'}</span>
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="text-xs text-gray-600">Could not reach health endpoint</div>';
+  }
+}
+
+loadSourceHealth();
+setInterval(loadSourceHealth, 60000);
+
+// Session capital bars
+const SESSION_COLORS_SYS = {
+  sports:   { text: 'text-green-300',  bar: '#34d399' },
+  politics: { text: 'text-blue-300',   bar: '#60a5fa' },
+  crypto:   { text: 'text-orange-300', bar: '#fb923c' },
+  longterm: { text: 'text-purple-300', bar: '#c084fc' },
+  daily:    { text: 'text-yellow-300', bar: '#facc15' },
+};
+
+async function loadSessionBars() {
+  const container = document.getElementById('session-bars');
+  try {
+    const resp = await fetch('/api/sessions');
+    const data = await resp.json();
+    let totalExposure = 0;
+    let html = '';
+    for (const [key, s] of Object.entries(data)) {
+      const c = SESSION_COLORS_SYS[key] || { text: 'text-gray-300', bar: '#9ca3af' };
+      const pct = Math.min(100, s.capital > 0 ? (s.exposure_usd / s.capital) * 100 : 0);
+      const pnlColor = s.pnl_usd >= 0 ? 'text-green-400' : 'text-red-400';
+      const pnlStr = (s.pnl_usd >= 0 ? '+' : '') + '$' + s.pnl_usd.toFixed(2);
+      const quota = key === 'daily' && s.daily_max != null ? ` · ${s.daily_used_today}/${s.daily_max} today` : '';
+      totalExposure += s.exposure_usd;
+      html += `
+        <a href="/trades#session=${key}" class="block group">
+          <div class="flex justify-between text-xs mb-1">
+            <span class="font-bold ${c.text}">${s.label}${quota}</span>
+            <span class="text-gray-400">
+              $${s.exposure_usd.toFixed(0)} / $${s.capital}
+              &nbsp;<span class="${pnlColor} font-mono">${pnlStr}</span>
+              &nbsp;<span class="text-gray-600">${s.open_trades} open</span>
+            </span>
+          </div>
+          <div class="w-full bg-gray-800 rounded-full h-1.5 group-hover:h-2 transition-all duration-150">
+            <div class="h-full rounded-full transition-all" style="width:${pct}%;background:${c.bar}"></div>
+          </div>
+        </a>`;
+    }
+    container.innerHTML = html;
+    document.getElementById('total-exposure-label').textContent = '$' + totalExposure.toFixed(2) + ' deployed';
+  } catch(e) {
+    container.innerHTML = '<div class="text-xs text-gray-600">Could not load session data</div>';
+  }
+}
+
+loadSessionBars();
+setInterval(loadSessionBars, 30000);
+</script>
+{% endblock %}

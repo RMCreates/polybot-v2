@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Daily Recommendations{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white mb-1">
+      <span class="text-yellow-300">⚡</span> Today's Recommendations
+    </h1>
+    <p class="text-gray-400 text-sm">
+      Polymarket vs Kalshi consensus — top {{ recommendations|length }} opportunit{% if recommendations|length == 1 %}y{% else %}ies{% endif %} closing in the next 48h.
+      Trade these manually on Kalshi.
+    </p>
+  </div>
+  <div class="bg-yellow-900/40 border border-yellow-800 rounded-lg px-4 py-2 text-xs text-yellow-300">
+    ⚡ DAILY session
+  </div>
+</div>
+
+<!-- Signal source health strip -->
+<div class="bg-gray-900 rounded-lg border border-gray-800 p-4 mb-6">
+  <div class="text-xs text-gray-500 uppercase font-bold tracking-wider mb-3">Signal Source Health</div>
+  <div id="source-health" class="flex gap-4 flex-wrap">
+    <div class="text-xs text-gray-600">Checking sources...</div>
+  </div>
+</div>
+
+{% if not recommendations %}
+<div class="bg-gray-900 rounded-lg border border-gray-800 p-12 text-center">
+  <div class="text-gray-500 text-4xl mb-4">📭</div>
+  <div class="text-gray-300 text-lg font-bold mb-2">No recommendations yet</div>
+  <p class="text-gray-500 text-sm max-w-md mx-auto">
+    No Polymarket markets closing within 48 hours have a matching Kalshi market above the similarity threshold.
+    Check back after the next cycle (runs every 15 min).
+  </p>
+</div>
+{% else %}
+
+<!-- Recommendation cards -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+  {% for rec in recommendations %}
+  <div class="bg-yellow-900/20 rounded-xl border {% if rec.is_arbitrage %}border-yellow-500{% else %}border-yellow-900{% endif %} p-5 flex flex-col">
+
+    <!-- Header: arb badge + closes-at -->
+    <div class="flex items-center justify-between mb-3">
+      {% if rec.is_arbitrage %}
+      <span class="bg-yellow-500 text-gray-900 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">
+        ⚡ ARB SIGNAL
+      </span>
+      {% else %}
+      <span class="bg-gray-800 text-gray-400 text-xs px-2 py-1 rounded uppercase tracking-wider">
+        · modest edge
+      </span>
+      {% endif %}
+      <span class="text-xs text-gray-500 font-mono">
+        closes {{ rec.closes_at }} ({{ rec.hours_to_close }}h)
+      </span>
+    </div>
+
+    <!-- Market question -->
+    <div class="text-white font-semibold text-sm leading-snug mb-4 min-h-[3rem]">
+      {{ rec.question }}
+    </div>
+
+    <!-- Price comparison -->
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="bg-gray-900/60 rounded-lg p-3 border border-gray-800">
+        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Polymarket</div>
+        <div class="text-2xl font-bold font-mono text-blue-300">{{ "%.0f" | format(rec.poly_price * 100) }}%</div>
+      </div>
+      <div class="bg-gray-900/60 rounded-lg p-3 border border-gray-800">
+        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Kalshi</div>
+        <div class="text-2xl font-bold font-mono text-green-300">{{ "%.0f" | format(rec.kalshi_price * 100) }}%</div>
+      </div>
+    </div>
+
+    <!-- Price diff -->
+    <div class="flex justify-between items-center mb-3 pb-3 border-b border-gray-800">
+      <span class="text-xs text-gray-500 uppercase tracking-wider">Gap</span>
+      <span class="text-lg font-bold font-mono {% if rec.is_arbitrage %}text-yellow-300{% else %}text-gray-300{% endif %}">
+        {% if rec.price_diff_pp > 0 %}+{% endif %}{{ rec.price_diff_pp }}pp
+      </span>
+    </div>
+
+    <!-- Recommendation -->
+    <div class="bg-gray-900/80 rounded-lg p-3 mb-3">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-[10px] text-gray-500 uppercase tracking-wider">Direction</span>
+        <span class="text-sm font-bold {% if 'YES' in rec.direction %}text-green-400{% else %}text-red-400{% endif %}">
+          {{ rec.direction }}
+        </span>
+      </div>
+      <div class="flex justify-between items-center mb-1">
+        <span class="text-[10px] text-gray-500 uppercase tracking-wider">Edge</span>
+        <span class="text-xs font-mono text-yellow-300">{{ "%.1f" | format(rec.edge * 100) }}%</span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-[10px] text-gray-500 uppercase tracking-wider">Similarity</span>
+        <span class="text-xs font-mono text-gray-400">{{ "%.0f" | format(rec.confidence * 100) }}%</span>
+      </div>
+    </div>
+
+    <!-- Reasoning -->
+    <div class="text-xs text-gray-400 leading-relaxed mb-3 flex-grow">
+      {{ rec.reasoning_text }}
+    </div>
+
+    <!-- Kalshi ticker -->
+    {% if rec.kalshi_ticker %}
+    <div class="mt-auto pt-3 border-t border-gray-800 text-[10px] text-gray-600 font-mono truncate">
+      Kalshi: {{ rec.kalshi_ticker }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadSourceHealth() {
+  const el = document.getElementById('source-health');
+  try {
+    const resp = await fetch('/api/sources/health');
+    const data = await resp.json();
+    el.innerHTML = Object.entries(data).map(([name, s]) => `
+      <div class="flex items-center gap-2 bg-gray-800 rounded px-3 py-2">
+        <span class="w-2 h-2 rounded-full ${s.ok ? 'bg-green-400' : 'bg-red-500'}"></span>
+        <span class="text-gray-300 text-xs font-bold uppercase">${name}</span>
+        <span class="text-gray-500 text-xs">${s.ms != null ? s.ms + 'ms' : s.note || 'unreachable'}</span>
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="text-xs text-gray-600">Could not reach health endpoint</div>';
+  }
+}
+
+loadSourceHealth();
+setInterval(loadSourceHealth, 60000);
+</script>
+{% endblock %}

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polymarket Bot — {% block title %}{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-mono">
+  <nav class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex gap-6 items-center sticky top-0 z-10">
+    <span class="text-green-400 font-bold text-lg tracking-widest">POLYBOT</span>
+    <a href="/trades" class="text-gray-300 hover:text-white text-sm transition-colors">📊 Trades</a>
+    <a href="/system" class="text-gray-300 hover:text-white text-sm transition-colors">⚙️ System</a>
+    <a href="/learning" class="text-gray-300 hover:text-white text-sm transition-colors">🧠 Teaching Center</a>
+    <a href="/daily" class="text-yellow-300 hover:text-yellow-100 text-sm transition-colors">⚡ Daily</a>
+    <span class="ml-auto text-xs text-gray-500" id="last-refresh">Loading...</span>
+  </nav>
+  <main class="p-6 max-w-7xl mx-auto">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    document.getElementById('last-refresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    setTimeout(() => location.reload(), 30000);
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

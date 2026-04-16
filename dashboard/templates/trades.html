@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+{% block title %}Paper Trades{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-white mb-1">Paper Trades</h1>
+  <p class="text-gray-400 text-sm">3 weekly sessions ($100 each) · 1 daily pocket ($25) · 1 long-term ($100) — click any row to expand reasoning.</p>
+</div>
+
+<!-- Session summary cards (loaded async) -->
+<div id="session-cards" class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+  <!-- skeleton placeholders -->
+  {% for _ in range(5) %}
+  <div class="bg-gray-900 rounded-lg p-3 border border-gray-800 animate-pulse h-28"></div>
+  {% endfor %}
+</div>
+
+<!-- Summary cards -->
+{% set resolved = trades | selectattr('status', 'equalto', 'RESOLVED') | list %}
+{% set open_trades = trades | selectattr('status', 'equalto', 'OPEN') | list %}
+{% set total_pnl = trades | selectattr('pnl_usd', 'ne', None) | sum(attribute='pnl_usd') %}
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="bg-gray-900 rounded-lg p-4 border border-gray-800">
+    <div class="text-xs text-gray-500 mb-1 uppercase">Total P&amp;L</div>
+    <div class="text-2xl font-bold {% if total_pnl >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+      ${{ "%.2f" | format(total_pnl) }}
+    </div>
+  </div>
+  <div class="bg-gray-900 rounded-lg p-4 border border-gray-800">
+    <div class="text-xs text-gray-500 mb-1 uppercase">Total Trades</div>
+    <div class="text-2xl font-bold text-white">{{ trades | length }}</div>
+  </div>
+  <div class="bg-gray-900 rounded-lg p-4 border border-gray-800">
+    <div class="text-xs text-gray-500 mb-1 uppercase">Open Positions</div>
+    <div class="text-2xl font-bold text-yellow-400">{{ open_trades | length }}</div>
+  </div>
+  <div class="bg-gray-900 rounded-lg p-4 border border-gray-800">
+    <div class="text-xs text-gray-500 mb-1 uppercase">Avg Edge</div>
+    {% set edges = trades | selectattr('edge', 'ne', None) | list %}
+    {% if edges | length > 0 %}
+    {% set avg_e = edges | sum(attribute='edge') / (edges | length) %}
+    <div class="text-2xl font-bold text-blue-400">{{ "%.1f" | format(avg_e * 100) }}%</div>
+    {% else %}
+    <div class="text-2xl font-bold text-gray-600">—</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- P&L Line Chart -->
+<div class="bg-gray-900 rounded-lg border border-gray-800 p-5 mb-6">
+  <div class="flex justify-between items-center mb-4">
+    <div class="text-xs text-gray-500 uppercase font-bold tracking-wider">Cumulative P&amp;L Over Time</div>
+    <div class="text-xs text-gray-600">Populates as markets resolve</div>
+  </div>
+  <div id="chart-placeholder" class="text-center py-8 text-gray-600 text-sm hidden">
+    No resolved trades yet — chart will appear when markets close.
+  </div>
+  <canvas id="pnlChart" height="80"></canvas>
+</div>
+
+<!-- Filter bar -->
+<div class="flex items-center gap-3 mb-3">
+  <span class="text-gray-500 text-sm">Showing: <span id="filter-label" class="text-gray-300">All trades</span></span>
+  <button id="filter-reset-btn"
+    onclick="clearFilter()"
+    class="hidden px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded border border-gray-600 transition-colors">
+    ✕ Show All Trades
+  </button>
+</div>
+
+<!-- Trade table -->
+<div class="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="bg-gray-800 text-gray-400 text-xs uppercase">
+        <th class="px-4 py-3 text-left">Market Question</th>
+        <th class="px-4 py-3 text-center">Side</th>
+        <th class="px-4 py-3 text-center">Session</th>
+        <th class="px-4 py-3 text-center font-bold">Size</th>
+        <th class="px-4 py-3 text-center">Entry</th>
+        <th class="px-4 py-3 text-center">Current</th>
+        <th class="px-4 py-3 text-center">Fair Prob</th>
+        <th class="px-4 py-3 text-center">Edge</th>
+        <th class="px-4 py-3 text-center">P&amp;L</th>
+        <th class="px-4 py-3 text-center">Status</th>
+        <th class="px-4 py-3 text-center">Date</th>
+        <th class="px-4 py-3 text-center">Closes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in trades %}
+      <tr class="border-t border-gray-800 hover:bg-gray-800/50 cursor-pointer transition-colors"
+          data-session="{{ t.session or '' }}"
+          data-trade-id="{{ t.id }}"
+          onclick="toggleReason({{ t.id }})">
+        <td class="px-4 py-3 text-gray-200 max-w-xs">
+          <span class="line-clamp-2 block leading-snug">{{ t.question }}</span>
+        </td>
+        <td class="px-4 py-3 text-center">
+          <span class="px-2 py-1 rounded text-xs font-bold
+            {% if 'YES' in t.side %}bg-green-900 text-green-300
+            {% else %}bg-red-900 text-red-300{% endif %}">
+            {{ t.side | replace("BUY_", "") }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-center">
+          {% set s = t.session %}
+          <span class="px-2 py-0.5 rounded text-xs font-semibold
+            {% if s == 'sports' %}bg-green-900/60 text-green-300
+            {% elif s == 'politics' %}bg-blue-900/60 text-blue-300
+            {% elif s == 'crypto' %}bg-orange-900/60 text-orange-300
+            {% elif s == 'longterm' %}bg-purple-900/60 text-purple-300
+            {% elif s == 'daily' %}bg-yellow-900/60 text-yellow-300
+            {% else %}bg-gray-700 text-gray-400{% endif %}">
+            {{ s or '—' }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-center text-white font-bold">${{ "%.2f" | format(t.size_usd) }}</td>
+        <td class="px-4 py-3 text-center text-gray-300 font-mono">{{ "%.3f" | format(t.entry_price) }}</td>
+        <td class="px-4 py-3 text-center font-mono
+          {% if t.current_price is not none and t.unrealized_pnl is not none and t.unrealized_pnl >= 0 %}text-green-400
+          {% elif t.current_price is not none and t.unrealized_pnl is not none %}text-red-400
+          {% else %}text-gray-500{% endif %}">
+          {% if t.current_price is not none %}{{ "%.3f" | format(t.current_price) }}
+            {% if t.signal_drift is not none %}
+              <span class="text-xs {% if t.signal_drift > 0 %}text-green-500{% elif t.signal_drift < 0 %}text-red-500{% else %}text-gray-500{% endif %}">
+                {{ "%+.1f" | format(t.signal_drift) }}pp
+              </span>
+            {% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-center text-blue-300 font-mono">
+          {% if t.fair_probability is not none %}{{ "%.3f" | format(t.fair_probability) }}{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-center font-mono
+          {% if t.edge is not none and t.edge > 0 %}text-green-400
+          {% elif t.edge is not none and t.edge < 0 %}text-red-400
+          {% else %}text-gray-500{% endif %}">
+          {% if t.edge is not none %}{{ "%+.1f" | format(t.edge * 100) }}%{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-center font-mono
+          {% if t.pnl_usd is not none and t.pnl_usd >= 0 %}text-green-400
+          {% elif t.pnl_usd is not none %}text-red-400
+          {% elif t.unrealized_pnl is not none and t.unrealized_pnl >= 0 %}text-green-400
+          {% elif t.unrealized_pnl is not none %}text-red-400
+          {% else %}text-gray-500{% endif %}">
+          {% if t.pnl_usd is not none %}
+            ${{ "%.2f" | format(t.pnl_usd) }}
+          {% elif t.unrealized_pnl is not none %}
+            <span class="opacity-60">~${{ "%.2f" | format(t.unrealized_pnl) }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-center">
+          <span class="px-2 py-1 rounded text-xs
+            {% if t.status == 'OPEN' %}bg-yellow-900 text-yellow-300
+            {% elif t.status == 'RESOLVED' %}bg-green-900 text-green-300
+            {% else %}bg-gray-700 text-gray-400{% endif %}">
+            {{ t.status }}{% if t.is_paper %} ·paper{% endif %}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-center text-gray-500 text-xs">{{ t.placed_at }}</td>
+        <td class="px-4 py-3 text-center text-xs font-mono
+          {% if t.hours_to_close is not none and t.hours_to_close < 24 %}text-yellow-400
+          {% elif t.hours_to_close is not none %}text-gray-400
+          {% else %}text-gray-600{% endif %}">
+          {% if t.hours_to_close is not none %}
+            {% if t.hours_to_close < 1 %}
+              &lt;1h
+            {% elif t.hours_to_close < 24 %}
+              {{ t.hours_to_close | int }}h
+            {% else %}
+              {{ (t.hours_to_close / 24) | int }}d
+            {% endif %}
+          {% elif t.closes_at %}
+            {{ t.closes_at }}
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+
+      <!-- Expandable reasoning panel -->
+      <tr id="reason-{{ t.id }}" class="hidden border-t border-gray-700 bg-gray-950">
+        <td colspan="12" class="px-6 py-5">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
+
+            <!-- Why this trade -->
+            <div class="space-y-3">
+              <div class="text-gray-400 uppercase font-bold tracking-wider text-xs border-b border-gray-800 pb-1">
+                Why this trade
+              </div>
+              <p class="text-gray-300 text-xs leading-relaxed">{{ t.reasoning_summary.headline }}</p>
+              {% if t.signal_drift is not none and t.status == 'OPEN' %}
+              <div class="flex items-center gap-2">
+                <span class="text-xs px-2 py-0.5 rounded font-mono font-bold
+                  {% if t.signal_drift > 0 %}bg-green-900/60 text-green-300
+                  {% elif t.signal_drift < 0 %}bg-red-900/60 text-red-300
+                  {% else %}bg-gray-700 text-gray-400{% endif %}">
+                  {{ "%+.1f" | format(t.signal_drift) }}pp
+                  {% if t.signal_drift > 0 %} ↑ moving your way
+                  {% elif t.signal_drift < 0 %} ↓ moving against you
+                  {% else %} → flat{% endif %}
+                </span>
+                <span class="text-gray-600 text-xs">since entry</span>
+              </div>
+              {% endif %}
+              <ul class="space-y-1.5 mt-1">
+                {% for bullet in t.reasoning_summary.bullets %}
+                <li class="text-xs text-gray-400">{{ bullet }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+
+            <!-- Signal quality -->
+            <div class="space-y-3">
+              <div class="text-gray-400 uppercase font-bold tracking-wider text-xs border-b border-gray-800 pb-1">Signal Quality</div>
+              <div class="space-y-1.5 text-gray-300">
+                <div class="flex justify-between"><span class="text-gray-500">Fair Probability</span><span class="text-blue-300 font-mono">{% if t.fair_probability is not none %}{{ "%.4f" | format(t.fair_probability) }}{% else %}—{% endif %}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">Market Mid</span><span class="font-mono">{% if t.market_midpoint is not none %}{{ "%.4f" | format(t.market_midpoint) }}{% else %}—{% endif %}</span></div>
+                <div class="flex justify-between">
+                  <span class="text-gray-500">Edge</span>
+                  <span class="font-mono {% if t.edge is not none and t.edge > 0 %}text-green-400{% else %}text-red-400{% endif %}">
+                    {% if t.edge is not none %}{{ "%+.4f" | format(t.edge) }}{% else %}—{% endif %}
+                  </span>
+                </div>
+                <div class="flex justify-between"><span class="text-gray-500">Confidence</span><span class="text-purple-300 font-mono">{% if t.signal_confidence is not none %}{{ "%.0f" | format(t.signal_confidence * 100) }}%{% else %}—{% endif %}</span></div>
+              </div>
+            </div>
+
+            <!-- Risk checks -->
+            <div class="space-y-3">
+              <div class="text-gray-400 uppercase font-bold tracking-wider text-xs border-b border-gray-800 pb-1">Risk Decision</div>
+              <div class="space-y-1.5 text-gray-300">
+                <div class="flex justify-between">
+                  <span class="text-gray-500">Decision</span>
+                  <span class="font-bold {% if t.reasoning_trace.get('risk_approved') %}text-green-400{% else %}text-red-400{% endif %}">
+                    {{ "APPROVED" if t.reasoning_trace.get('risk_approved') else "REJECTED" }}
+                  </span>
+                </div>
+                <div class="flex justify-between"><span class="text-gray-500">Final size</span><span class="font-mono">${{ "%.2f" | format(t.reasoning_trace.get('final_size_usd', 0)) }}</span></div>
+                <div class="flex justify-between">
+                  <span class="text-gray-500">Tier</span>
+                  <span class="{% if t.reasoning_trace.get('is_favorable_trade') %}text-yellow-400{% else %}text-gray-500{% endif %}">
+                    {{ "⭐ Favorable ($20 cap)" if t.reasoning_trace.get('is_favorable_trade') else "Standard ($10 cap)" }}
+                  </span>
+                </div>
+                {% for rule in t.reasoning_trace.get('risk_rules_applied', []) %}
+                <div class="text-gray-600 font-mono">✓ {{ rule }}</div>
+                {% endfor %}
+                {% for reason in t.reasoning_trace.get('risk_rejection_reasons', []) %}
+                <div class="text-red-400 font-mono">✗ {{ reason }}</div>
+                {% endfor %}
+              </div>
+              {% if t.status == 'OPEN' %}
+              <div class="pt-2 border-t border-gray-800">
+                <button onclick="closeTrade(event, {{ t.id }})"
+                  class="w-full px-3 py-1.5 bg-red-900/60 hover:bg-red-800 text-red-300 text-xs rounded border border-red-800 transition-colors">
+                  Force Close at Current Price
+                </button>
+              </div>
+              {% endif %}
+            </div>
+
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="12" class="px-4 py-12 text-center text-gray-600">
+          No trades yet. The bot places paper trades every 30 min when it finds a valid signal.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleReason(id) {
+  const row = document.getElementById('reason-' + id);
+  row.classList.toggle('hidden');
+}
+
+// Session filter
+let activeSession = null;
+
+function filterBySession(session) {
+  activeSession = session;
+  document.querySelectorAll('tr[data-session]').forEach(row => {
+    const match = row.dataset.session === session;
+    row.style.display = match ? '' : 'none';
+    const tradeId = row.dataset.tradeId;
+    if (tradeId) {
+      const reasonRow = document.getElementById('reason-' + tradeId);
+      if (reasonRow) reasonRow.style.display = match ? '' : 'none';
+    }
+  });
+  document.getElementById('filter-reset-btn').classList.remove('hidden');
+  document.getElementById('filter-label').textContent = session.charAt(0).toUpperCase() + session.slice(1) + ' trades';
+  history.replaceState(null, '', '#session=' + session);
+  document.querySelectorAll('[data-card]').forEach(el => {
+    el.style.opacity = el.dataset.card === session ? '1' : '0.35';
+    el.style.transform = el.dataset.card === session ? 'scale(1.03)' : 'scale(1)';
+  });
+}
+
+function clearFilter() {
+  activeSession = null;
+  document.querySelectorAll('tr[data-session]').forEach(row => {
+    row.style.display = '';
+    const tradeId = row.dataset.tradeId;
+    if (tradeId) {
+      const reasonRow = document.getElementById('reason-' + tradeId);
+      if (reasonRow) reasonRow.style.display = '';
+    }
+  });
+  document.getElementById('filter-reset-btn').classList.add('hidden');
+  document.getElementById('filter-label').textContent = 'All trades';
+  history.replaceState(null, '', window.location.pathname);
+  document.querySelectorAll('[data-card]').forEach(el => {
+    el.style.opacity = '1';
+    el.style.transform = 'scale(1)';
+  });
+}
+
+async function closeTrade(event, tradeId) {
+  event.stopPropagation();
+  if (!confirm('Force close this trade at current market price?')) return;
+  const btn = event.target;
+  btn.textContent = 'Closing...';
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`/api/trades/${tradeId}/close`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.error) {
+      alert('Error: ' + data.error);
+      btn.textContent = 'Force Close at Current Price';
+      btn.disabled = false;
+    } else {
+      location.reload();
+    }
+  } catch (e) {
+    alert('Request failed');
+    btn.textContent = 'Force Close at Current Price';
+    btn.disabled = false;
+  }
+}
+
+// P&L Chart
+async function loadChart() {
+  const resp = await fetch('/api/performance');
+  const data = await resp.json();
+  const canvas = document.getElementById('pnlChart');
+  const placeholder = document.getElementById('chart-placeholder');
+
+  if (!data.dates || data.dates.length === 0) {
+    canvas.classList.add('hidden');
+    placeholder.classList.remove('hidden');
+    return;
+  }
+
+  const isPositive = data.current_pnl >= 0;
+  const lineColor = isPositive ? '#34d399' : '#f87171';
+
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: data.dates,
+      datasets: [{
+        label: 'Cumulative P&L ($)',
+        data: data.cumulative_pnl,
+        borderColor: lineColor,
+        backgroundColor: isPositive ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: lineColor,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `$${ctx.parsed.y.toFixed(2)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#6b7280', font: { size: 10 } },
+          grid: { color: '#1f2937' }
+        },
+        y: {
+          ticks: {
+            color: '#6b7280',
+            font: { size: 10 },
+            callback: v => `$${v}`
+          },
+          grid: { color: '#1f2937' }
+        }
+      }
+    }
+  });
+}
+
+loadChart();
+
+// Session cards
+const SESSION_COLORS = {
+  sports:   { bg: 'bg-green-900/40',  border: 'border-green-700',  text: 'text-green-300',  bar: '#34d399' },
+  politics: { bg: 'bg-blue-900/40',   border: 'border-blue-700',   text: 'text-blue-300',   bar: '#60a5fa' },
+  crypto:   { bg: 'bg-orange-900/40', border: 'border-orange-700', text: 'text-orange-300', bar: '#fb923c' },
+  longterm: { bg: 'bg-purple-900/40', border: 'border-purple-700', text: 'text-purple-300', bar: '#c084fc' },
+  daily:    { bg: 'bg-yellow-900/40', border: 'border-yellow-700', text: 'text-yellow-300', bar: '#facc15' },
+};
+
+async function loadSessionCards() {
+  try {
+    const resp = await fetch('/api/sessions');
+    const data = await resp.json();
+    const container = document.getElementById('session-cards');
+    container.innerHTML = '';
+    for (const [key, s] of Object.entries(data)) {
+      const c = SESSION_COLORS[key] || { bg: 'bg-gray-800', border: 'border-gray-700', text: 'text-gray-300', bar: '#9ca3af' };
+      const pnlColor = s.pnl_usd >= 0 ? 'text-green-400' : 'text-red-400';
+      const pnlSign  = s.pnl_usd >= 0 ? '+' : '';
+      const pct      = Math.min(100, s.capital > 0 ? (s.exposure_usd / s.capital) * 100 : 0);
+      const wr       = s.win_rate !== null ? (s.win_rate * 100).toFixed(0) + '%' : '—';
+      const quotaLine = key === 'daily' && s.daily_max != null
+      ? `<div class="text-xs text-yellow-600 mt-1 text-center">${s.daily_used_today}/${s.daily_max} bets today</div>`
+      : '';
+    container.innerHTML += `
+        <div class="rounded-lg p-3 border ${c.bg} ${c.border} cursor-pointer transition-all duration-150 hover:opacity-90"
+             data-card="${key}"
+             onclick="filterBySession('${key}')"
+             title="Click to filter by ${s.label}">
+          <div class="flex justify-between items-start mb-2">
+            <span class="text-xs font-bold uppercase ${c.text}">${s.label}</span>
+            <span class="text-xs ${pnlColor} font-mono font-bold">${pnlSign}$${s.pnl_usd.toFixed(2)}</span>
+          </div>
+          <div class="text-xs text-gray-400 mb-1">
+            $${s.exposure_usd.toFixed(0)} / $${s.capital.toFixed(0)} exposed
+          </div>
+          <div class="w-full bg-gray-800 rounded-full h-1.5 mb-2">
+            <div class="h-1.5 rounded-full" style="width:${pct}%;background:${c.bar}"></div>
+          </div>
+          <div class="flex justify-between text-xs text-gray-500">
+            <span>${s.open_trades} open</span>
+            <span>WR ${wr}</span>
+          </div>
+          ${quotaLine}
+        </div>`;
+    }
+  } catch(e) {
+    console.warn('Session cards failed to load', e);
+  }
+  // Auto-apply filter from URL hash (e.g. /trades#session=daily from system page)
+  const hash = window.location.hash;
+  if (hash && hash.startsWith('#session=')) {
+    filterBySession(hash.slice('#session='.length));
+  }
+}
+
+loadSessionCards();
+</script>
+{% endblock %}
