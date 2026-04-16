@@ -9,6 +9,9 @@ from signals.market_categorizer import session_for_hours
 from config.settings import settings
 from observability.logger import get_logger
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 log = get_logger(__name__)
 
 MAX_BELIEVABLE_EDGE = 0.35   # anything above this is almost certainly a data error
@@ -47,7 +50,7 @@ async def run_analysis_cycle(session: AsyncSession, markets: list[Market]) -> li
 
         # Security Fix 5: Skip stale snapshots — data older than 70 min is unreliable
         if snap is not None:
-            age = datetime.now(timezone.utc) - snap.captured_at
+            age = _utcnow() - snap.captured_at
             if age > timedelta(minutes=STALE_THRESHOLD_MINUTES):
                 log.warning("stale_orderbook_skipped", extra={
                     "market_id": market.id,
@@ -58,7 +61,7 @@ async def run_analysis_cycle(session: AsyncSession, markets: list[Market]) -> li
         # Time-to-close filter: only trade markets within our session windows
         if market.closes_at is None:
             continue  # close date unknown — skip until next collection populates it
-        hours_left = (market.closes_at - datetime.now(timezone.utc)).total_seconds() / 3600
+        hours_left = (market.closes_at - _utcnow()).total_seconds() / 3600
         if hours_left < settings.min_hours_to_close:
             continue  # expires too soon
         if hours_left > settings.longterm_max_hours:

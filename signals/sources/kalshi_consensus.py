@@ -96,13 +96,21 @@ async def find_kalshi_probability(
     if best_match is None or best_sim < settings.kalshi_similarity_threshold:
         return None
 
-    # Kalshi prices are in cents (0–100); convert to probability (0.0–1.0)
-    yes_bid = float(best_match.get("yes_bid") or 0)
-    yes_ask = float(best_match.get("yes_ask") or 0)
-    probability = (yes_bid + yes_ask) / 200.0
+    # New Kalshi API uses last_price_dollars (e.g. 0.55 = 55% probability)
+    # Fallback to legacy yes_bid/yes_ask cents fields if present
+    yes_bid = best_match.get("yes_bid")
+    yes_ask = best_match.get("yes_ask")
+    last_price = best_match.get("last_price_dollars")
+
+    if yes_bid is not None and yes_ask is not None and (float(yes_bid) + float(yes_ask)) > 0:
+        probability = (float(yes_bid) + float(yes_ask)) / 200.0
+    elif last_price is not None and float(last_price) > 0:
+        probability = float(last_price)
+    else:
+        return None  # No usable price data
 
     # Guard against degenerate prices
-    if probability <= 0.0 or probability >= 1.0:
+    if probability <= 0.01 or probability >= 0.99:
         return None
 
     metadata = {
@@ -110,6 +118,7 @@ async def find_kalshi_probability(
         "kalshi_title": best_match.get("title", ""),
         "kalshi_yes_bid": yes_bid,
         "kalshi_yes_ask": yes_ask,
+        "kalshi_last_price": last_price,
         "similarity": round(best_sim, 4),
     }
 

@@ -11,6 +11,9 @@ from observability.logger import get_logger
 
 log = get_logger(__name__)
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 MIN_TRADE_USD = 3.0
 STOP_LOSS_PP = 0.15  # auto-close if price moves -15pp against entry
 
@@ -34,7 +37,7 @@ def _get_trade_session(trade: Trade, market: Market) -> str:
         return meta["session"]
     # Fallback: infer from market close time
     if market.closes_at:
-        hours_left = (market.closes_at - datetime.now(timezone.utc)).total_seconds() / 3600
+        hours_left = (market.closes_at - _utcnow()).total_seconds() / 3600
         return session_for_hours(hours_left, market.question)
     return categorize_market(market.question)
 
@@ -163,7 +166,7 @@ async def run_paper_trading_cycle(
                 session_wr_multiplier[s] = 1.0   # neutral
 
     # Daily pocket: count trades placed today
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = _utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     daily_trades_today = sum(
         1 for t, m in open_rows
         if _get_trade_session(t, m) == "daily" and t.placed_at >= today_start
@@ -204,7 +207,7 @@ async def run_paper_trading_cycle(
         if not session_label:
             # Fallback: infer from market close time
             if market.closes_at:
-                hours_left = (market.closes_at - datetime.now(timezone.utc)).total_seconds() / 3600
+                hours_left = (market.closes_at - _utcnow()).total_seconds() / 3600
                 session_label = session_for_hours(hours_left, market.question)
             else:
                 session_label = categorize_market(market.question)

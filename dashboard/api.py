@@ -9,6 +9,11 @@ from signals.market_categorizer import session_for_hours, categorize_market
 from config.settings import settings
 
 
+def _utcnow() -> datetime:
+    """Naive UTC datetime for comparison with SQLite-stored naive datetimes."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _build_reasoning_summary(meta: dict, trace: dict, side: str) -> dict:
     blend = meta.get("blend_used", "")
     momentum_edge = meta.get("momentum_edge", 0) or 0
@@ -117,14 +122,14 @@ async def get_trades_with_signals(session: AsyncSession, limit: int = 100) -> li
             trace.get("session")
             or meta.get("session")
             or (session_for_hours(
-                    (market.closes_at - datetime.now(timezone.utc)).total_seconds() / 3600,
+                    (market.closes_at - _utcnow()).total_seconds() / 3600,
                     market.question
-                ) if market.closes_at and market.closes_at > datetime.now(timezone.utc)
+                ) if market.closes_at and market.closes_at > _utcnow()
                 else categorize_market(market.question))
         )
 
         # Hours to close
-        now = datetime.now(timezone.utc)
+        now = _utcnow()
         if market.closes_at and market.closes_at > now:
             hours_to_close = round((market.closes_at - now).total_seconds() / 3600, 1)
         else:
@@ -175,7 +180,7 @@ async def get_trades_with_signals(session: AsyncSession, limit: int = 100) -> li
 
 
 async def get_system_status(session: AsyncSession) -> dict:
-    now = datetime.now(timezone.utc)
+    now = _utcnow()
     today = now - timedelta(hours=24)
 
     markets_count = (await session.execute(select(func.count(Market.id)))).scalar() or 0
@@ -320,7 +325,7 @@ async def generate_daily_recommendations(session: AsyncSession, markets: list) -
     from config.settings import settings as cfg
 
     daily_markets = []
-    now = datetime.now(timezone.utc)
+    now = _utcnow()
 
     for market in markets:
         if not market.closes_at:
@@ -420,7 +425,7 @@ async def get_session_stats(db: AsyncSession) -> dict:
         .where(Trade.is_paper == True, Trade.status == "RESOLVED", Trade.pnl_usd.isnot(None))
     )).all())
 
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = _utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
     session_exposure: dict = {s: 0.0 for s in ALL_SESSIONS}
     session_pnl: dict = {s: 0.0 for s in ALL_SESSIONS}

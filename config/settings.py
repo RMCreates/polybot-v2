@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     metaculus_api_key: SecretStr = SecretStr("")
 
     # Kalshi integration (public API, no auth needed)
-    kalshi_api_url: str = "https://trading-api.kalshi.com/trade-api/v2"
+    kalshi_api_url: str = "https://api.elections.kalshi.com/trade-api/v2"
     kalshi_cache_ttl_seconds: int = 300
     kalshi_similarity_threshold: float = 0.45
     daily_recommendation_count: int = 3
